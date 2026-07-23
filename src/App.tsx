@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Route, Routes, useSearchParams } from 'react-router-dom'
-import { format, subYears } from 'date-fns'
+import { format, formatDuration, intervalToDuration, subYears } from 'date-fns'
 import type { EChartsCoreOption } from 'echarts/core'
 import { Chart } from './components/Chart'
 import { mapCsvToPriceSeries, previewCsv, type CsvPreview } from './data/csv'
 import { loadBundledData } from './data/load'
 import { runBacktest } from './engine/backtest'
+import { analyzeRecovery } from './engine/recovery'
 import type {
   BacktestResult,
   ISODate,
   PriceSeries,
   PurchaseCount,
+  RecoveryAnalysis,
+  RecoveryEpisode,
   RollingResult,
   Scenario,
   StrategyMetrics,
@@ -450,6 +453,118 @@ function MetricsTable({ result }: { result: BacktestResult }) {
   )
 }
 
+function recoveryDuration(episode: RecoveryEpisode, coverageEnd: ISODate): string {
+  const end = episode.recoveryDate ?? coverageEnd
+  return formatDuration(intervalToDuration({
+    start: new Date(`${episode.entryDate}T00:00:00Z`),
+    end: new Date(`${end}T00:00:00Z`),
+  }), { format: ['years', 'months', 'days'] }) || 'less than one day'
+}
+
+function RecoveryDetails({
+  episode,
+  capital,
+  coverageEnd,
+}: {
+  episode: RecoveryEpisode
+  capital: number
+  coverageEnd: ISODate
+}) {
+  const troughValue = capital * (1 + episode.maximumDrawdown)
+  return (
+    <dl className="recovery-details">
+      <div><dt>Entry</dt><dd>{episode.entryDate}</dd></div>
+      <div>
+        <dt>Lowest point</dt>
+        <dd>
+          {episode.troughDate} · {moneyPrecise.format(troughValue)} ({percent.format(episode.maximumDrawdown)})
+        </dd>
+      </div>
+      <div>
+        <dt>Break-even</dt>
+        <dd>
+          {episode.status === 'noInitialDrawdown'
+            ? 'No initial loss'
+            : episode.recoveryDate ?? `Not by ${coverageEnd}`}
+        </dd>
+      </div>
+      <div>
+        <dt>{episode.status === 'unrecovered' ? 'Time observed' : 'Time underwater'}</dt>
+        <dd>{episode.status === 'noInitialDrawdown' ? '0 days' : recoveryDuration(episode, coverageEnd)}</dd>
+      </div>
+    </dl>
+  )
+}
+
+function RecoverySection({
+  result,
+  recovery,
+  symbol,
+}: {
+  result: BacktestResult
+  recovery: RecoveryAnalysis
+  symbol: string
+}) {
+  const selected = recovery.selected
+  const recoveredAfterSelectedWindow = selected.recoveryDate !== undefined
+    && selected.recoveryDate > result.effectiveEndDate
+  const selectedSummary = selected.status === 'completed'
+    ? `It first reached the original ${moneyPrecise.format(result.scenario.capital)} again on ${selected.recoveryDate}, after ${recoveryDuration(selected, recovery.coverageEnd)}${recoveredAfterSelectedWindow ? `—beyond your selected end date of ${result.effectiveEndDate}` : ''}.`
+    : selected.status === 'unrecovered'
+      ? `It was still below the original ${moneyPrecise.format(result.scenario.capital)} when this dataset ended on ${recovery.coverageEnd}.`
+      : 'It was at or above the entry value on the next session, so its initial time underwater was zero.'
+  const worst = recovery.worstCompleted
+
+  return (
+    <section className="content-section recovery-section" aria-labelledby="recovery-title">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">The rough-entry test</span>
+          <h2 id="recovery-title">How long could you be underwater?</h2>
+        </div>
+        <p>Break-even is the first later session when the invest-now account regains its starting value.</p>
+      </div>
+      <div className="recovery-grid">
+        <article>
+          <span className="card-label">Your selected start</span>
+          <h3>What happened after investing on {selected.entryDate}</h3>
+          <p className="recovery-summary">{selectedSummary}</p>
+          <RecoveryDetails
+            episode={selected}
+            capital={result.scenario.capital}
+            coverageEnd={recovery.coverageEnd}
+          />
+        </article>
+        <article className="stress-card">
+          <span className="card-label">Longest completed recovery</span>
+          {worst ? (
+            <>
+              <h3>The hardest historical {symbol} entry was {worst.entryDate}</h3>
+              <p className="recovery-summary">
+                Break-even arrived {recoveryDuration(worst, recovery.coverageEnd)} later. At the bottom, {percent.format(1 + worst.maximumDrawdown)} of the initial investment remained.
+              </p>
+              <RecoveryDetails
+                episode={worst}
+                capital={result.scenario.capital}
+                coverageEnd={recovery.coverageEnd}
+              />
+            </>
+          ) : (
+            <>
+              <h3>No completed underwater period exists in this dataset.</h3>
+              <p className="recovery-summary">There is not enough history to identify a completed recovery.</p>
+            </>
+          )}
+        </article>
+      </div>
+      <p className="recovery-note">
+        This uses dividend- and split-adjusted prices, so break-even includes reinvested distributions. It is historical hindsight, not a prediction.
+        {recovery.unrecoveredEntryCount > 0 && ` ${number.format(recovery.unrecoveredEntryCount)} late entry dates fell below their entry value but had not recovered by the snapshot end; they are not mislabeled as completed recoveries.`}
+      </p>
+    </section>
+  )
+}
+
 function RollingSection({ rolling }: { rolling: RollingResult }) {
   const histogramOption: EChartsCoreOption = {
     animation: false,
@@ -603,6 +718,22 @@ function Dashboard() {
     }
   }, [scenario, series, rates])
   const result = calculation.result
+  const recovery = useMemo(() => {
+    if (!result || !series || !rates) return undefined
+    const firstRateDate = rates[0].date
+    const lastRateDate = rates.at(-1)!.date
+    const sharedPoints = series.points.filter(
+      (point) => point.date >= firstRateDate && point.date <= lastRateDate,
+    )
+    return analyzeRecovery({
+      metadata: {
+        ...series.metadata,
+        coverageStart: sharedPoints[0].date,
+        coverageEnd: sharedPoints.at(-1)!.date,
+      },
+      points: sharedPoints,
+    }, result.effectiveStartDate)
+  }, [result, series, rates])
 
   useEffect(() => {
     if (!result || !series || !rates) {
@@ -715,6 +846,13 @@ function Dashboard() {
             <WinnerCard result={result} />
             <AccountValueSection result={result} />
             <MetricsTable result={result} />
+            {recovery && (
+              <RecoverySection
+                result={result}
+                recovery={recovery}
+                symbol={series.metadata.symbol}
+              />
+            )}
             {!rolling && !rollingError && <Spinner />}
             {rollingError && <ErrorNotice>{rollingError}</ErrorNotice>}
             {rolling && <RollingSection rolling={rolling} />}
@@ -760,6 +898,7 @@ function Methodology() {
                 <div><dt>Volatility</dt><dd>Sample standard deviation of observation-to-observation account returns × √252.</dd></div>
                 <div><dt>Maximum drawdown</dt><dd>Largest peak-to-trough percentage decline in the account-value series.</dd></div>
                 <div><dt>Equity exposure</dt><dd>Average of equity value ÷ total account value on observed sessions.</dd></div>
+                <div><dt>Break-even recovery</dt><dd>First later session after an initial decline when the invest-now account value is again at least the original capital. The longest completed recovery is compared across every valid entry; snapshot-censored entries remain unrecovered.</dd></div>
               </dl>
               <p>Rates never look ahead: each calendar day uses the newest Treasury rate published on or before it. Differences below one cent are ties.</p>
             </section>

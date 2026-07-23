@@ -113,3 +113,23 @@ export interface RollingResult {
   worstStart: RollingPoint
   histogram: Array<{ from: number; to: number; count: number }>
 }
+
+export type RecoveryStatus = 'completed' | 'unrecovered' | 'noInitialDrawdown'
+
+export interface RecoveryEpisode {
+  status: RecoveryStatus
+  entryDate: ISODate
+  entryPrice: number
+  troughDate: ISODate
+  troughPrice: number
+  maximumDrawdown: number
+  recoveryDate?: ISODate
+  elapsedCalendarDays: number
+}
+
+export interface RecoveryAnalysis {
+  selected: RecoveryEpisode
+  worstCompleted?: RecoveryEpisode
+  unrecoveredEntryCount: number
+  coverageEnd: ISODate
+}
