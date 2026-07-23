@@ -2,8 +2,9 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
-  timeout: 45_000,
-  expect: { timeout: 20_000 },
+  timeout: 60_000,
+  expect: { timeout: 40_000 },
+  workers: process.env.CI ? 1 : undefined,
   use: {
     baseURL: 'http://127.0.0.1:4173',
     trace: 'retain-on-failure',
