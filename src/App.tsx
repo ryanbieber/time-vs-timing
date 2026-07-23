@@ -9,6 +9,7 @@ import { runBacktest } from './engine/backtest'
 import { analyzeRecovery } from './engine/recovery'
 import type {
   BacktestResult,
+  BreakEvenDistribution,
   ISODate,
   PriceSeries,
   PurchaseCount,
@@ -499,10 +500,12 @@ function RecoveryDetails({
 function RecoverySection({
   result,
   recovery,
+  rolling,
   symbol,
 }: {
   result: BacktestResult
   recovery: RecoveryAnalysis
+  rolling?: RollingResult
   symbol: string
 }) {
   const selected = recovery.selected
@@ -561,7 +564,141 @@ function RecoverySection({
         This uses dividend- and split-adjusted prices, so break-even includes reinvested distributions. It is historical hindsight, not a prediction.
         {recovery.unrecoveredEntryCount > 0 && ` ${number.format(recovery.unrecoveredEntryCount)} late entry dates fell below their entry value but had not recovered by the snapshot end; they are not mislabeled as completed recoveries.`}
       </p>
+      {rolling && <BreakEvenDistributionSection result={result} rolling={rolling} />}
     </section>
+  )
+}
+
+function breakEvenAverageLabel(distribution: BreakEvenDistribution): string {
+  return distribution.unrecoveredCount > 0
+    ? 'Average across resolved starts'
+    : 'Average across all starts'
+}
+
+function days(value: number | null): string {
+  return value === null ? 'Not available' : `${value.toFixed(1)} days`
+}
+
+function BreakEvenSummaryCard({
+  distribution,
+  name,
+}: {
+  distribution: BreakEvenDistribution
+  name: string
+}) {
+  return (
+    <article>
+      <span>{name}</span>
+      <strong>{days(distribution.averageResolvedDays)}</strong>
+      <small>{breakEvenAverageLabel(distribution)}</small>
+      <dl>
+        <div><dt>Average after an initial loss</dt><dd>{days(distribution.averageRecoveryDays)}</dd></div>
+        <div><dt>Median after an initial loss</dt><dd>{days(distribution.medianRecoveryDays)}</dd></div>
+        <div>
+          <dt>No initial drawdown</dt>
+          <dd>{percent.format(distribution.noInitialDrawdownCount / distribution.totalCount)}</dd>
+        </div>
+        <div><dt>Unrecovered</dt><dd>{number.format(distribution.unrecoveredCount)}</dd></div>
+      </dl>
+    </article>
+  )
+}
+
+function BreakEvenDistributionSection({
+  result,
+  rolling,
+}: {
+  result: BacktestResult
+  rolling: RollingResult
+}) {
+  const lumpSum = rolling.breakEven.lumpSum
+  const dca = rolling.breakEven.dca
+  const option: EChartsCoreOption = {
+    animation: false,
+    color: ['#172b4d', '#e06d3c'],
+    grid: { left: 12, right: 12, top: 46, bottom: 62, containLabel: true },
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, left: 0 },
+    xAxis: {
+      type: 'category',
+      data: lumpSum.histogram.map((bin) => bin.label),
+      axisLabel: { interval: 0, rotate: 32, fontSize: 10 },
+    },
+    yAxis: {
+      type: 'value',
+      name: 'Starting dates',
+      splitLine: { lineStyle: { color: '#e7e2d7' } },
+    },
+    series: [
+      {
+        name: 'Invest fully',
+        type: 'bar',
+        data: lumpSum.histogram.map((bin) => bin.count),
+        itemStyle: { borderRadius: [3, 3, 0, 0] },
+      },
+      {
+        name: 'DCA',
+        type: 'bar',
+        data: dca.histogram.map((bin) => bin.count),
+        itemStyle: {
+          borderRadius: [3, 3, 0, 0],
+          decal: { symbol: 'rect', dashArrayX: [2, 2], dashArrayY: [5, 3] },
+        },
+      },
+    ],
+  }
+
+  return (
+    <div className="break-even-distribution">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Every outcome</span>
+          <h3>Distribution of all break-even times</h3>
+        </div>
+        <p>
+          {number.format(rolling.points.length)} complete windows with the same horizon and {result.scenario.purchaseCount}-purchase DCA schedule.
+        </p>
+      </div>
+      <div className="break-even-summary">
+        <BreakEvenSummaryCard distribution={lumpSum} name="Invest fully" />
+        <BreakEvenSummaryCard distribution={dca} name="DCA" />
+      </div>
+      <div className="break-even-chart">
+        <Chart
+          option={option}
+          label="Histogram comparing break-even times for investing fully and dollar-cost averaging across every historical starting date."
+          height={340}
+        />
+      </div>
+      <LazyDetails summary="View break-even distribution as a table">
+        <div className="table-scroll">
+          <table aria-label="Break-even distribution data">
+            <thead>
+              <tr><th>Break-even time</th><th>Invest fully</th><th>DCA</th></tr>
+            </thead>
+            <tbody>
+              {lumpSum.histogram.map((bin, index) => (
+                <tr key={bin.label}>
+                  <th scope="row">{bin.label}</th>
+                  <td>{number.format(bin.count)}</td>
+                  <td>{number.format(dca.histogram[index].count)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row">All starts</th>
+                <td>{number.format(lumpSum.totalCount)}</td>
+                <td>{number.format(dca.totalCount)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </LazyDetails>
+      <p className="recovery-note">
+        Zero days means the account was at or above principal on the next observed session. A start must fall at least one cent below principal to count as underwater. Unrecovered windows stay in their own bucket and are excluded from averages.
+      </p>
+    </div>
   )
 }
 
@@ -850,6 +987,7 @@ function Dashboard() {
               <RecoverySection
                 result={result}
                 recovery={recovery}
+                rolling={rolling}
                 symbol={series.metadata.symbol}
               />
             )}
@@ -899,6 +1037,7 @@ function Methodology() {
                 <div><dt>Maximum drawdown</dt><dd>Largest peak-to-trough percentage decline in the account-value series.</dd></div>
                 <div><dt>Equity exposure</dt><dd>Average of equity value ÷ total account value on observed sessions.</dd></div>
                 <div><dt>Break-even recovery</dt><dd>First later session after an initial decline when the invest-now account value is again at least the original capital. The longest completed recovery is compared across every valid entry; snapshot-censored entries remain unrecovered.</dd></div>
+                <div><dt>Break-even distribution</dt><dd>Each rolling start is assigned zero days when the next observed account value is at or above principal, its calendar time to recovery after an initial loss, or unrecovered when the selected horizon ends first. Losses below one cent are treated as ties. Unrecovered starts remain visible and are excluded from averages.</dd></div>
               </dl>
               <p>Rates never look ahead: each calendar day uses the newest Treasury rate published on or before it. Differences below one cent are ties.</p>
             </section>

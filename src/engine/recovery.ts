@@ -1,10 +1,12 @@
 import { differenceInCalendarDays } from 'date-fns'
 import type {
+  AccountBreakEvenObservation,
   AdjustedPricePoint,
   ISODate,
   PriceSeries,
   RecoveryAnalysis,
   RecoveryEpisode,
+  ValuePoint,
 } from './types'
 
 function calendarDays(from: ISODate, to: ISODate): number {
@@ -82,6 +84,35 @@ function firstIndexOnOrAfter(points: AdjustedPricePoint[], date: ISODate): numbe
     else high = middle
   }
   return low
+}
+
+export function analyzeAccountBreakEven(
+  values: ValuePoint[],
+  capital: number,
+): AccountBreakEvenObservation {
+  if (values.length < 2) {
+    throw new Error('Account break-even analysis requires at least two value observations.')
+  }
+
+  const isAtPrincipal = (value: number) => capital - value < 0.01
+  if (isAtPrincipal(values[1].value)) {
+    return { status: 'noInitialDrawdown', elapsedCalendarDays: 0 }
+  }
+
+  const recovery = values.find(
+    (point, index) => index > 1 && isAtPrincipal(point.value),
+  )
+  if (recovery) {
+    return {
+      status: 'completed',
+      elapsedCalendarDays: calendarDays(values[0].date, recovery.date),
+    }
+  }
+
+  return {
+    status: 'unrecovered',
+    elapsedCalendarDays: calendarDays(values[0].date, values.at(-1)!.date),
+  }
 }
 
 export function analyzeRecovery(series: PriceSeries, selectedEntryDate: ISODate): RecoveryAnalysis {

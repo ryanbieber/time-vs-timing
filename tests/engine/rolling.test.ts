@@ -55,6 +55,12 @@ describe('runRollingBacktests', () => {
     expect(result.lumpSumWinRate + result.dcaWinRate + result.tieRate).toBeCloseTo(1)
     expect(result.bestStart.returnDifference).toBeGreaterThanOrEqual(result.worstStart.returnDifference)
     expect(result.histogram.reduce((sum, bin) => sum + bin.count, 0)).toBe(result.points.length)
+    expect(result.breakEven.lumpSum.histogram.reduce((sum, bin) => sum + bin.count, 0))
+      .toBe(result.points.length)
+    expect(result.breakEven.dca.histogram.reduce((sum, bin) => sum + bin.count, 0))
+      .toBe(result.points.length)
+    expect(result.breakEven.lumpSum.totalCount).toBe(result.points.length)
+    expect(result.breakEven.dca.totalCount).toBe(result.points.length)
   })
 
   it('computes interpolated quantiles and a stable histogram for identical values', () => {
@@ -65,6 +71,38 @@ describe('runRollingBacktests', () => {
     expect(bins).toHaveLength(3)
     expect(bins[0].count).toBe(1)
     expect(rollingInternals.quantile([4], 0.9)).toBe(4)
+  })
+
+  it('summarizes resolved, recovered, zero-day, and censored break-even outcomes', () => {
+    const summary = rollingInternals.summarizeBreakEven([
+      { status: 'noInitialDrawdown', elapsedCalendarDays: 0 },
+      { status: 'completed', elapsedCalendarDays: 6 },
+      { status: 'completed', elapsedCalendarDays: 30 },
+      { status: 'unrecovered', elapsedCalendarDays: 365 },
+    ])
+    expect(summary).toMatchObject({
+      totalCount: 4,
+      completedCount: 2,
+      noInitialDrawdownCount: 1,
+      unrecoveredCount: 1,
+      averageResolvedDays: 12,
+      averageRecoveryDays: 18,
+      medianRecoveryDays: 18,
+      p90RecoveryDays: 27.6,
+    })
+    expect(summary.histogram.find((bin) => bin.label === '0 days')?.count).toBe(1)
+    expect(summary.histogram.find((bin) => bin.label === '1–7 days')?.count).toBe(1)
+    expect(summary.histogram.find((bin) => bin.label === '8–30 days')?.count).toBe(1)
+    expect(summary.histogram.find((bin) => bin.label === 'Unrecovered')?.count).toBe(1)
+
+    expect(rollingInternals.summarizeBreakEven([
+      { status: 'unrecovered', elapsedCalendarDays: 365 },
+    ])).toMatchObject({
+      averageResolvedDays: null,
+      averageRecoveryDays: null,
+      medianRecoveryDays: null,
+      p90RecoveryDays: null,
+    })
   })
 
   it('rejects a horizon with no complete windows', () => {

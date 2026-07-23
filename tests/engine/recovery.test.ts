@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeRecovery } from '../../src/engine/recovery'
-import type { ISODate, PriceSeries } from '../../src/engine/types'
+import { analyzeAccountBreakEven, analyzeRecovery } from '../../src/engine/recovery'
+import type { ISODate, PriceSeries, ValuePoint } from '../../src/engine/types'
 
 function series(values: Array<[ISODate, number]>): PriceSeries {
   return {
@@ -15,6 +15,15 @@ function series(values: Array<[ISODate, number]>): PriceSeries {
     },
     points: values.map(([date, adjustedClose]) => ({ date, adjustedClose })),
   }
+}
+
+function account(values: Array<[ISODate, number]>): ValuePoint[] {
+  return values.map(([date, value]) => ({
+    date,
+    value,
+    equityValue: value,
+    cash: 0,
+  }))
 }
 
 describe('recovery analysis', () => {
@@ -85,5 +94,40 @@ describe('recovery analysis', () => {
       ['2020-01-01', 100],
       ['2020-01-02', 101],
     ]), '2021-01-01')).toThrow('outside price coverage')
+  })
+
+  it('measures account break-even from entry and treats sub-cent losses as ties', () => {
+    expect(analyzeAccountBreakEven(account([
+      ['2020-01-01', 10_000],
+      ['2020-01-02', 9_999.995],
+      ['2020-01-03', 9_000],
+    ]), 10_000)).toEqual({
+      status: 'noInitialDrawdown',
+      elapsedCalendarDays: 0,
+    })
+
+    expect(analyzeAccountBreakEven(account([
+      ['2020-01-01', 10_000],
+      ['2020-01-02', 9_000],
+      ['2020-01-03', 9_999],
+      ['2020-01-06', 10_000],
+    ]), 10_000)).toEqual({
+      status: 'completed',
+      elapsedCalendarDays: 5,
+    })
+  })
+
+  it('keeps account recoveries censored when the window ends underwater', () => {
+    expect(analyzeAccountBreakEven(account([
+      ['2020-01-01', 10_000],
+      ['2020-01-02', 9_000],
+      ['2020-01-03', 9_500],
+    ]), 10_000)).toEqual({
+      status: 'unrecovered',
+      elapsedCalendarDays: 2,
+    })
+    expect(() => analyzeAccountBreakEven(account([
+      ['2020-01-01', 10_000],
+    ]), 10_000)).toThrow('at least two')
   })
 })

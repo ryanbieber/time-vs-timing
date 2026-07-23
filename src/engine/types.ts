@@ -112,6 +112,10 @@ export interface RollingResult {
   bestStart: RollingPoint
   worstStart: RollingPoint
   histogram: Array<{ from: number; to: number; count: number }>
+  breakEven: {
+    lumpSum: BreakEvenDistribution
+    dca: BreakEvenDistribution
+  }
 }
 
 export type RecoveryStatus = 'completed' | 'unrecovered' | 'noInitialDrawdown'
@@ -132,4 +136,26 @@ export interface RecoveryAnalysis {
   worstCompleted?: RecoveryEpisode
   unrecoveredEntryCount: number
   coverageEnd: ISODate
+}
+
+export interface AccountBreakEvenObservation {
+  status: RecoveryStatus
+  elapsedCalendarDays: number
+}
+
+export interface BreakEvenBin {
+  label: string
+  count: number
+}
+
+export interface BreakEvenDistribution {
+  totalCount: number
+  completedCount: number
+  noInitialDrawdownCount: number
+  unrecoveredCount: number
+  averageResolvedDays: number | null
+  averageRecoveryDays: number | null
+  medianRecoveryDays: number | null
+  p90RecoveryDays: number | null
+  histogram: BreakEvenBin[]
 }
