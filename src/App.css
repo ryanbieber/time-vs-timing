@@ -126,6 +126,22 @@ thead th { position: sticky; top: 0; z-index: 1; color: #57635f; background: #ea
 .stress-card .recovery-details dt { color: rgba(255,255,255,.6); }
 .recovery-details dd { margin: 0; text-align: right; font-size: .82rem; font-weight: 700; }
 .recovery-note { max-width: 880px; margin: 20px 0 0; color: var(--muted); font-size: .76rem; line-height: 1.6; }
+.break-even-distribution { margin-top: 56px; padding-top: 54px; border-top: 1px solid var(--line); }
+.break-even-distribution .section-heading h3 { margin-bottom: 0; font-size: clamp(1.55rem, 2.5vw, 2.15rem); }
+.break-even-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+.break-even-summary > article {
+  padding: 24px 27px; border: 1px solid var(--line); border-radius: 12px;
+  background: rgba(255,255,255,.5);
+}
+.break-even-summary > article > span { display: block; margin-bottom: 4px; color: var(--muted); font-size: .76rem; font-weight: 700; }
+.break-even-summary > article > strong { display: block; font-size: 1.75rem; letter-spacing: -.04em; }
+.break-even-summary > article > small { display: block; margin: 4px 0 20px; color: var(--muted); }
+.break-even-summary dl { margin: 0; }
+.break-even-summary dl div { display: flex; justify-content: space-between; gap: 18px; padding: 9px 0; border-top: 1px solid var(--line); }
+.break-even-summary dt { color: var(--muted); font-size: .73rem; }
+.break-even-summary dd { margin: 0; text-align: right; font-size: .78rem; font-weight: 700; }
+.break-even-chart { padding: 22px 18px 5px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.42); }
+.break-even-distribution tfoot th, .break-even-distribution tfoot td { font-weight: 800; background: #f0ece3; }
 .rolling-section { padding-bottom: 66px; }
 .rolling-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; overflow: hidden; margin-bottom: 26px; border: 1px solid var(--line); border-radius: 12px; background: var(--line); }
 .rolling-stats div { padding: 22px; background: rgba(255,255,255,.58); }
@@ -179,6 +195,7 @@ code { padding: 2px 5px; color: #263f43; background: #e6e6dd; border-radius: 4px
   .winner-card { grid-template-columns: 1fr; }
   .winner-values { padding: 22px 0 0; border-left: 0; border-top: 1px solid rgba(255,255,255,.17); }
   .recovery-grid { grid-template-columns: 1fr; }
+  .break-even-summary { grid-template-columns: 1fr; }
   .rolling-grid { grid-template-columns: 1fr; }
   .range-strip { grid-template-columns: repeat(3, 1fr); }
   .methodology-layout { grid-template-columns: 1fr; gap: 30px; }
@@ -212,6 +229,9 @@ code { padding: 2px 5px; color: #263f43; background: #e6e6dd; border-radius: 4px
   .recovery-summary { min-height: 0; }
   .recovery-details div { align-items: start; flex-direction: column; gap: 4px; }
   .recovery-details dd { text-align: left; }
+  .break-even-summary > article { padding: 22px 20px; }
+  .break-even-summary dl div { align-items: start; flex-direction: column; gap: 3px; }
+  .break-even-summary dd { text-align: left; }
   .rolling-stats { grid-template-columns: 1fr 1fr; }
   .rolling-stats div { padding: 17px; }
   .range-strip { grid-template-columns: 1fr 1fr; }
